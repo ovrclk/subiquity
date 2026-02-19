@@ -94,7 +94,9 @@ class HomenodeTokenForm(Form):
 
         if not re.match(TOKEN_PATTERN, token):
             return _(
-                "Installation key must be exactly five words separated by dashes (e.g., word1-word2-word3-word4-word5)"
+                "Installation key must be exactly five words"
+                " separated by dashes"
+                " (e.g., word1-word2-word3-word4-word5)"
             )
 
 
@@ -120,7 +122,8 @@ class HomenodeTokenView(BaseView):
             )
         else:
             excerpt = _(
-                "Network is not available. Please configure network first to validate your installation key."
+                "Network is not available. Please configure network"
+                " first to validate your installation key."
             )
 
         super().__init__(self.form.as_screen(excerpt=excerpt, focus_buttons=True))

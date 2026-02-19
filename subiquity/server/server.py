@@ -66,7 +66,7 @@ from subiquitycore.core import Application
 from subiquitycore.file_util import copy_file_if_exists, write_file
 from subiquitycore.prober import Prober
 from subiquitycore.snapd import AsyncSnapd, SnapdConnection, get_fake_connection
-from subiquitycore.ssh import host_key_fingerprints  # noqa: F401
+from subiquitycore.ssh import host_key_fingerprints, user_key_fingerprints  # noqa: F401
 from subiquitycore.utils import run_command
 
 NOPROBERARG = "NOPROBER"
