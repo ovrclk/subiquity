@@ -17,8 +17,8 @@
 import base64
 import logging
 import os
-import ssl
 import socket
+import ssl
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
 
