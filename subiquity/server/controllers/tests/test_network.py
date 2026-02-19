@@ -122,8 +122,6 @@ class TestNetworkAutoDisableInterfaces(SubiTestCase):
         if modify:
             # Disconnected devices get DHCPv4 and DHCPv6 enabled so they
             # can attempt to acquire addresses.
-            self.assertEqual(
-                dead_dev.config, {"dhcp4": True, "dhcp6": True}
-            )
+            self.assertEqual(dead_dev.config, {"dhcp4": True, "dhcp6": True})
         else:
             self.assertEqual(dead_dev.config, dead_config)

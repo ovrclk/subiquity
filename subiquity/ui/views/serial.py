@@ -22,7 +22,7 @@ import logging
 
 from urwid import Text
 
-from subiquitycore.ui.buttons import forward_btn, other_btn
+from subiquitycore.ui.buttons import forward_btn
 from subiquitycore.ui.utils import rewrap, screen
 from subiquitycore.view import BaseView
 
@@ -40,6 +40,7 @@ that supports unicode and rich colours you can switch to "rich mode"
 which uses unicode, colours and supports many languages.
 
 """
+
 
 class SerialView(BaseView):
     title = "Serial"

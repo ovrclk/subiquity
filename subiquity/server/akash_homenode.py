@@ -20,7 +20,7 @@ import os
 import socket
 import ssl
 from abc import ABC, abstractmethod
-from typing import Dict, Optional
+from typing import Dict
 
 import aiohttp
 
@@ -64,10 +64,10 @@ class AkashAPIStrategy(ABC):
     @abstractmethod
     async def verify_token(self, token: str) -> Dict:
         """Verify the installation key with the Akash API.
-        
+
         Returns:
             Dict with API response data
-            
+
         Raises:
             InvalidTokenError: If installation key is invalid
             ExpiredTokenError: If installation key has expired
@@ -84,11 +84,11 @@ class HTTPAkashAPIStrategy(AkashAPIStrategy):
     async def verify_token(self, token: str) -> Dict:
         """Verify the installation key with the Akash API."""
         url = f"{self.base_url}{AKASH_VERIFY_ENDPOINT}"
-        
+
         # Encode token as base64 for Authorization header
         try:
-            token_bytes = token.encode('utf-8')
-            token_b64 = base64.b64encode(token_bytes).decode('utf-8')
+            token_bytes = token.encode("utf-8")
+            token_b64 = base64.b64encode(token_bytes).decode("utf-8")
         except Exception as e:
             log.error("Failed to encode token: %s", e)
             raise CheckTokenError(token, f"Failed to encode token: {e}")
@@ -120,7 +120,9 @@ class HTTPAkashAPIStrategy(AkashAPIStrategy):
             )
             async with aiohttp.ClientSession(connector=connector) as session:
                 log.debug("Making API request to %s", url)
-                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                async with session.get(
+                    url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
                     if response.status == 200:
                         data = await response.json()
                         if data.get("status") == "success":
@@ -128,17 +130,17 @@ class HTTPAkashAPIStrategy(AkashAPIStrategy):
                         else:
                             # API returned success status but with error message
                             detail = data.get("detail", "Unknown error")
-                            
+
                             # Handle detail being a dict or string
                             if isinstance(detail, dict):
                                 error_msg = detail.get("error", str(detail))
                             else:
                                 error_msg = str(detail)
-                            
+
                             # Also check for error field at top level
                             if not error_msg or error_msg == str(detail):
                                 error_msg = data.get("error", "Unknown error")
-                            
+
                             if "expired" in str(error_msg).lower():
                                 raise ExpiredTokenError(token, error_msg)
                             else:
@@ -147,20 +149,24 @@ class HTTPAkashAPIStrategy(AkashAPIStrategy):
                         # Unauthorized - invalid token
                         try:
                             error_data = await response.json()
-                            detail = error_data.get("detail", "Invalid or expired installation key")
-                            
+                            detail = error_data.get(
+                                "detail", "Invalid or expired installation key"
+                            )
+
                             # Handle detail being a dict or string
                             if isinstance(detail, dict):
                                 error_msg = detail.get("error", str(detail))
                             else:
                                 error_msg = str(detail)
-                            
+
                             # Also check for error field at top level
                             if not error_msg or error_msg == str(detail):
-                                error_msg = error_data.get("error", "Invalid or expired installation key")
+                                error_msg = error_data.get(
+                                    "error", "Invalid or expired installation key"
+                                )
                         except Exception:
                             error_msg = "Invalid or expired installation key"
-                        
+
                         if "expired" in str(error_msg).lower():
                             raise ExpiredTokenError(token, error_msg)
                         else:
@@ -170,16 +176,18 @@ class HTTPAkashAPIStrategy(AkashAPIStrategy):
                         try:
                             error_data = await response.json()
                             detail = error_data.get("detail", f"HTTP {response.status}")
-                            
+
                             # Handle detail being a dict or string
                             if isinstance(detail, dict):
                                 error_msg = detail.get("error", str(detail))
                             else:
                                 error_msg = str(detail)
-                            
+
                             # Also check for error field at top level
                             if not error_msg or error_msg == str(detail):
-                                error_msg = error_data.get("error", f"HTTP {response.status}")
+                                error_msg = error_data.get(
+                                    "error", f"HTTP {response.status}"
+                                )
                         except Exception:
                             error_msg = f"HTTP {response.status}"
                         raise CheckTokenError(token, error_msg)
@@ -190,25 +198,42 @@ class HTTPAkashAPIStrategy(AkashAPIStrategy):
         except CheckTokenError:
             raise
         except aiohttp.ClientConnectorError as e:
-            log.error("Connection error verifying installation key: %s (type: %s)", e, type(e).__name__)
+            log.error(
+                "Connection error verifying installation key: %s (type: %s)",
+                e,
+                type(e).__name__,
+            )
             # Check if it's an SSL error
             if "SSL" in str(e) or "certificate" in str(e).lower():
                 raise CheckTokenError(token, f"SSL/Certificate error: {e}")
             raise CheckTokenError(token, f"Connection error: {e}")
         except aiohttp.ClientSSLError as e:
-            log.error("SSL error verifying installation key: %s (type: %s)", e, type(e).__name__)
+            log.error(
+                "SSL error verifying installation key: %s (type: %s)",
+                e,
+                type(e).__name__,
+            )
             raise CheckTokenError(token, f"SSL error: {e}")
         except aiohttp.ServerTimeoutError as e:
             log.error("Timeout error verifying installation key: %s", e)
             raise CheckTokenError(token, f"Request timeout: {e}")
         except aiohttp.ClientError as e:
-            log.error("Network error verifying installation key: %s (type: %s)", e, type(e).__name__)
+            log.error(
+                "Network error verifying installation key: %s (type: %s)",
+                e,
+                type(e).__name__,
+            )
             raise CheckTokenError(token, f"Network error: {e}")
         except ssl.SSLError as e:
             log.error("SSL error verifying installation key: %s", e)
             raise CheckTokenError(token, f"SSL error: {e}")
         except Exception as e:
-            log.error("Unexpected error verifying installation key: %s (type: %s)", e, type(e).__name__, exc_info=True)
+            log.error(
+                "Unexpected error verifying installation key: %s (type: %s)",
+                e,
+                type(e).__name__,
+                exc_info=True,
+            )
             raise CheckTokenError(token, f"Unexpected error: {e}")
 
 
@@ -218,6 +243,7 @@ class MockedAkashAPIStrategy(AkashAPIStrategy):
     async def verify_token(self, token: str) -> Dict:
         """Mock implementation that simulates API responses."""
         import asyncio
+
         await asyncio.sleep(0.1)  # Simulate network delay
 
         if not token:
@@ -238,8 +264,8 @@ class MockedAkashAPIStrategy(AkashAPIStrategy):
                     "valid": True,
                     "expired": False,
                     "install_id": "mock-install-id-12345",
-                    "message": "Installation key is valid for this user"
-                }
+                    "message": "Installation key is valid for this user",
+                },
             }
 
 
@@ -251,14 +277,13 @@ class AkashAPIInterface:
 
     async def verify_installation_key(self, token: str) -> Dict:
         """Verify an installation key token.
-        
+
         Returns:
             Dict with API response data
-            
+
         Raises:
             InvalidTokenError: If token is invalid
             ExpiredTokenError: If token has expired
             CheckTokenError: If API call fails
         """
         return await self.strategy.verify_token(token)
-

@@ -14,7 +14,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import logging
-import os
 
 from subiquity.common.apidef import API
 from subiquity.common.types import (
@@ -102,19 +101,24 @@ class HomenodeTokenController(SubiquityController):
 
     async def check_token_GET(self, token: str) -> HomenodeTokenCheckAnswer:
         """Handle a GET request asking whether the installation key is valid.
-        
+
         Returns:
             HomenodeTokenCheckAnswer with validation status
         """
-        log.info("check_token_GET called with token: %s", token[:10] + "..." if len(token) > 10 else token)
-        log.info("Network status: has_network=%s", self.app.base_model.network.has_network)
-        
+        log.info(
+            "check_token_GET called with token: %s",
+            token[:10] + "..." if len(token) > 10 else token,
+        )
+        log.info(
+            "Network status: has_network=%s", self.app.base_model.network.has_network
+        )
+
         # Check if network is available
         if not self.app.base_model.network.has_network:
             log.warning("Network not available, returning NO_NETWORK status")
             return HomenodeTokenCheckAnswer(
                 status=HomenodeTokenCheckStatus.NO_NETWORK,
-                message="Network is not available. Please configure network first."
+                message="Network is not available. Please configure network first.",
             )
 
         try:
@@ -122,42 +126,46 @@ class HomenodeTokenController(SubiquityController):
             log.info("Calling akash_api.verify_installation_key")
             result = await self.akash_api.verify_installation_key(token)
             log.info("Installation key validation successful: %s", token[:10] + "...")
-            
+
             # Extract and save install_id if present
             install_id = result.get("data", {}).get("install_id")
             if install_id:
                 self.install_id = install_id
                 self._save_install_id(install_id)
-                log.info("Extracted and saved install_id: %s", install_id[:10] + "..." if len(install_id) > 10 else install_id)
+                log.info(
+                    "Extracted and saved install_id: %s",
+                    install_id[:10] + "..." if len(install_id) > 10 else install_id,
+                )
             else:
                 log.warning("install_id not found in API response")
-            
+
             return HomenodeTokenCheckAnswer(
                 status=HomenodeTokenCheckStatus.VALID_TOKEN,
-                message=result.get("data", {}).get("message", "Installation key is valid")
+                message=result.get("data", {}).get(
+                    "message", "Installation key is valid"
+                ),
             )
         except InvalidTokenError as e:
             log.warning("Invalid installation key: %s", e.message)
             return HomenodeTokenCheckAnswer(
                 status=HomenodeTokenCheckStatus.INVALID_TOKEN,
-                message=e.message or "Invalid installation key"
+                message=e.message or "Invalid installation key",
             )
         except ExpiredTokenError as e:
             log.warning("Expired installation key: %s", e.message)
             return HomenodeTokenCheckAnswer(
                 status=HomenodeTokenCheckStatus.EXPIRED_TOKEN,
-                message=e.message or "Installation key has expired"
+                message=e.message or "Installation key has expired",
             )
         except CheckTokenError as e:
             log.error("Installation key verification failed: %s", e.message)
             return HomenodeTokenCheckAnswer(
                 status=HomenodeTokenCheckStatus.UNKNOWN_ERROR,
-                message=e.message or "Failed to verify installation key"
+                message=e.message or "Failed to verify installation key",
             )
         except Exception as e:
             log.exception("Unexpected error during installation key verification")
             return HomenodeTokenCheckAnswer(
                 status=HomenodeTokenCheckStatus.UNKNOWN_ERROR,
-                message=f"Unexpected error: {str(e)}"
+                message=f"Unexpected error: {str(e)}",
             )
-

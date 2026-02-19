@@ -53,13 +53,18 @@ class HomenodeTokenController(SubiquityTuiController):
         on_failure: Callable[[TokenStatus, Optional[str]], None],
     ) -> None:
         """Asynchronously check the installation key via remote API."""
-        log.info("HomenodeTokenController.check_token called for token: %s", token[:10] + "..." if len(token) > 10 else token)
+        log.info(
+            "HomenodeTokenController.check_token called for token: %s",
+            token[:10] + "..." if len(token) > 10 else token,
+        )
 
         async def inner() -> None:
             try:
                 log.info("Making API call to check_token endpoint")
                 answer = await self.endpoint.check_token.GET(token)
-                log.info("API response: status=%s, message=%s", answer.status, answer.message)
+                log.info(
+                    "API response: status=%s, message=%s", answer.status, answer.message
+                )
                 if answer.status == TokenStatus.VALID_TOKEN:
                     log.info("Token is valid, calling on_success")
                     on_success()
@@ -77,4 +82,3 @@ class HomenodeTokenController(SubiquityTuiController):
         if self._check_task is not None:
             self._check_task.cancel()
             self._check_task = None
-

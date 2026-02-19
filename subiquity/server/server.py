@@ -32,7 +32,6 @@ from subiquity.cloudinit import (
     cloud_init_status_wait,
     get_host_combined_cloud_config,
     legacy_cloud_init_extract,
-    rand_user_password,
     validate_cloud_init_top_level_keys,
 )
 from subiquity.common.api.recoverable_error import RecoverableError
@@ -44,7 +43,6 @@ from subiquity.common.types import (
     ApplicationState,
     ApplicationStatus,
     ErrorReportRef,
-    KeyFingerprint,
     LiveSessionSSHInfo,
     NonReportableError,
     PasswordKind,
@@ -68,7 +66,7 @@ from subiquitycore.core import Application
 from subiquitycore.file_util import copy_file_if_exists, write_file
 from subiquitycore.prober import Prober
 from subiquitycore.snapd import AsyncSnapd, SnapdConnection, get_fake_connection
-from subiquitycore.ssh import host_key_fingerprints, user_key_fingerprints
+from subiquitycore.ssh import host_key_fingerprints  # noqa: F401
 from subiquitycore.utils import run_command
 
 NOPROBERARG = "NOPROBER"
