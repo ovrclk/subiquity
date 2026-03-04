@@ -2382,71 +2382,6 @@ class FilesystemController(SubiquityController, FilesystemManipulator):
         except Exception:
             return False
 
-    async def _teardown_loop_devices(self):
-        """Tear down casper/squashfs mounts and loop devices.
-
-        When booted via iso-scan/filename the ISO sits on a loop device
-        (typically loop0) with squashfs layers stacked on top.  We must
-        peel these off before rebooting or the kernel panics trying to
-        flush writes to the detached backing file.
-
-        The strategy:
-        1. Lazy-unmount all squashfs and ISO mounts (they reference the
-           loop device).
-        2. Detach all loop devices.
-        3. Sync to flush any pending writes on real block devices.
-        4. Hard-reboot via sysrq-trigger — this skips systemd's shutdown
-           sequence entirely, which is safe because curtin has already
-           finished writing all data to the target disk and /target has
-           been unmounted above.
-        """
-        log.debug("Windows loopback boot detected — tearing down loop "
-                  "devices to avoid shutdown deadlock")
-
-        # Lazy-unmount everything under /cdrom (the ISO mountpoint) and
-        # any remaining squashfs mounts.  --lazy detaches immediately even
-        # if busy — exactly what we need since the loop device cannot be
-        # cleanly released while casper holds references.
-        for mp in ("/cdrom", "/rofs", "/cow"):
-            try:
-                await self.app.command_runner.run(
-                    ["umount", "--lazy", mp])
-            except subprocess.CalledProcessError:
-                log.debug("umount %s failed (may not be mounted)", mp)
-
-        # Detach all remaining loop devices.
-        try:
-            await self.app.command_runner.run(["losetup", "-D"])
-        except subprocess.CalledProcessError:
-            log.debug("losetup -D failed")
-
-        # Flush all pending I/O so the target disk is consistent.
-        try:
-            await self.app.command_runner.run(["sync"])
-        except subprocess.CalledProcessError:
-            pass
-
-        # Hard-reboot via sysrq — bypasses systemd shutdown entirely so
-        # it never tries (and fails) to unmount the now-gone loop device.
-        # We only use 's' (sync) then 'b' (immediate reboot).
-        # We intentionally skip 'u' (remount-ro) because it tries to
-        # remount ALL filesystems read-only, including the loop-backed
-        # casper/squashfs layers that are already in a broken state after
-        # lazy-unmount + losetup -D — this deadlocks the kernel.
-        # /target was already cleanly unmounted above, so no data is at risk.
-        log.debug("Triggering immediate reboot via sysrq")
-        try:
-            sysrq_path = pathlib.Path("/proc/sysrq-trigger")
-            # Enable all sysrq functions first (may be restricted)
-            pathlib.Path("/proc/sys/kernel/sysrq").write_text("1")
-            # 's' = sync, then 'b' = immediate reboot
-            sysrq_path.write_text("s")
-            await asyncio.sleep(1)
-            sysrq_path.write_text("b")
-        except Exception:
-            log.exception("sysrq reboot failed, falling back to "
-                          "systemctl reboot")
-
     async def _pre_shutdown(self):
         """This function is executed just before rebooting and after copying
         logs to the target. This means bugs reports are unlikely to include
@@ -2461,6 +2396,23 @@ class FilesystemController(SubiquityController, FilesystemManipulator):
         didn't address the issue we tried to solve at the time).
         https://github.com/canonical/subiquity/pull/2064
         """
+        # When booted from the Windows installer via GRUB loopback, the
+        # ISO is loop-mounted from NTFS with casper/squashfs layers on
+        # top.  ANY filesystem operation (unmount, sync, remount-ro) can
+        # deadlock the kernel because of the loop device dependency
+        # chain.  The only safe action is an immediate hard reboot.
+        # By this point all install data has been written by curtin and
+        # logs have been copied to /target, so no data is at risk.
+        if self._is_windows_loopback_boot():
+            log.debug("Windows loopback boot detected — forcing "
+                      "immediate hard reboot via sysrq")
+            try:
+                pathlib.Path("/proc/sys/kernel/sysrq").write_text("1")
+                pathlib.Path("/proc/sysrq-trigger").write_text("b")
+            except Exception:
+                log.exception("sysrq reboot failed")
+            return
+
         if not self.reset_partition_only:
             # /target is mounted only if the installation was actually started.
             try:
@@ -2478,12 +2430,3 @@ class FilesystemController(SubiquityController, FilesystemManipulator):
         # needed.
         if shutil.which("zpool") is not None:
             await self.app.command_runner.run(["zpool", "export", "-a"])
-
-        # When booted from the Windows installer via GRUB loopback, the ISO
-        # is loop-mounted from the NTFS partition.  systemd's shutdown
-        # sequence cannot cleanly unmount the loop device (the NTFS driver
-        # and casper layers create a deadlock), producing endless
-        # "i/o error, dev loop0" messages and preventing reboot.
-        # Tear down the loop mounts and force a hard reboot via sysrq.
-        if self._is_windows_loopback_boot():
-            await self._teardown_loop_devices()
