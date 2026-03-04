@@ -2428,16 +2428,20 @@ class FilesystemController(SubiquityController, FilesystemManipulator):
 
         # Hard-reboot via sysrq — bypasses systemd shutdown entirely so
         # it never tries (and fails) to unmount the now-gone loop device.
+        # We only use 's' (sync) then 'b' (immediate reboot).
+        # We intentionally skip 'u' (remount-ro) because it tries to
+        # remount ALL filesystems read-only, including the loop-backed
+        # casper/squashfs layers that are already in a broken state after
+        # lazy-unmount + losetup -D — this deadlocks the kernel.
+        # /target was already cleanly unmounted above, so no data is at risk.
         log.debug("Triggering immediate reboot via sysrq")
         try:
             sysrq_path = pathlib.Path("/proc/sysrq-trigger")
             # Enable all sysrq functions first (may be restricted)
             pathlib.Path("/proc/sys/kernel/sysrq").write_text("1")
-            # 's' = sync, 'u' = remount-ro, 'b' = immediate reboot
+            # 's' = sync, then 'b' = immediate reboot
             sysrq_path.write_text("s")
-            await asyncio.sleep(0.5)
-            sysrq_path.write_text("u")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
             sysrq_path.write_text("b")
         except Exception:
             log.exception("sysrq reboot failed, falling back to "
