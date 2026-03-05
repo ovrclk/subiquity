@@ -14,6 +14,7 @@
 
 import logging
 import os
+import sys
 
 from subiquitycore.file_util import set_log_perms
 
@@ -56,5 +57,16 @@ def setup_logger(dir, base="subiquity"):
 
         logger.addHandler(handler)
         r[level] = logfile
+
+    # Also log to stderr so output reaches the serial console (ttyS0)
+    # when console=ttyS0,115200 is on the kernel cmdline.
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(logging.DEBUG)
+    console_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s:%(lineno)d %(message)s"
+        )
+    )
+    logger.addHandler(console_handler)
 
     return r
