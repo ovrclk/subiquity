@@ -15,6 +15,7 @@
 
 import logging
 import pathlib
+import secrets
 from typing import Optional
 
 import attr
@@ -53,7 +54,6 @@ from subiquitycore.ui.form import (
     BooleanField,
     ChoiceField,
     Form,
-    PasswordField,
     RadioButtonField,
     SubForm,
     SubFormField,
@@ -67,42 +67,6 @@ from subiquity.ui.views.filesystem.partition import SizeField
 log = logging.getLogger("subiquity.ui.views.filesystem.guided")
 
 subtitle = _("Configure a guided storage layout, or create a custom one:")
-
-
-class LUKSOptionsForm(SubForm):
-    passphrase = PasswordField(_("Passphrase:"))
-    confirm_passphrase = PasswordField(_("Confirm passphrase:"))
-    recovery_key = BooleanField(
-        ("Also create a recovery key"),
-        help=_(
-            "The key will be stored as"
-            " ~/recovery-key.txt in the live system and will"
-            " be copied to /var/log/installer/ in the target"
-            " system."
-        ),
-    )
-
-    def validate_passphrase(self):
-        if len(self.passphrase.value) < 1:
-            return _("Passphrase must be set")
-
-    def validate_confirm_passphrase(self):
-        if self.passphrase.value != self.confirm_passphrase.value:
-            return _("Passphrases do not match")
-
-
-class LVMOptionsForm(SubForm):
-    def __init__(self, parent):
-        super().__init__(parent)
-        connect_signal(self.encrypt.widget, "change", self._toggle)
-        self.luks_options.enabled = self.encrypt.value
-
-    def _toggle(self, sender, val):
-        self.luks_options.enabled = val
-        self.validated()
-
-    encrypt = BooleanField(_("Encrypt the LVM group with LUKS"), help=NO_HELP)
-    luks_options = SubFormField(LUKSOptionsForm, "", help=NO_HELP)
 
 
 def summarize_device(disk):
@@ -188,13 +152,16 @@ choices = {
 
 
 class GuidedChoiceForm(SubForm):
+    # Akash HomeNode fork: encryption is mandatory and non-interactive.
+    # The LVM toggle, the encrypt checkbox, and the passphrase fields are
+    # intentionally absent — the operator only picks the disk. The guided
+    # view auto-generates a LUKS passphrase and always produces a recovery
+    # key, which late-commands consume to add the initramfs keyfile.
     disk = ChoiceField(caption=NO_CAPTION, help=NO_HELP, choices=["x"])
-    use_lvm = BooleanField(_("Set up this disk as an LVM group"), help=NO_HELP)
-    lvm_options = SubFormField(LVMOptionsForm, "", help=NO_HELP)
     use_tpm = BooleanField(_("Full disk encryption with TPM"))
 
     def __init__(self, parent):
-        super().__init__(parent, initial={"use_lvm": True})
+        super().__init__(parent)
         self.tpm_choice = None
 
         options = []
@@ -226,19 +193,12 @@ class GuidedChoiceForm(SubForm):
         self.disk.widget.index = initial
         connect_signal(self.disk.widget, "select", self._select_disk)
         self._select_disk(None, self.disk.value)
-        connect_signal(self.use_lvm.widget, "change", self._toggle_lvm)
-        self._toggle_lvm(None, self.use_lvm.value)
 
-        if GuidedCapability.LVM_LUKS not in all_caps:
-            self.remove_field("lvm_options")
-        if GuidedCapability.LVM not in all_caps:
-            self.remove_field("use_lvm")
         core_boot_caps = [c for c in all_caps if c.is_core_boot()]
         if not core_boot_caps:
             self.remove_field("use_tpm")
 
     def _select_disk(self, sender, val):
-        self.use_lvm.enabled = GuidedCapability.LVM in val.allowed
         core_boot_caps = [c for c in val.allowed if c.is_core_boot()]
         if core_boot_caps:
             assert len(val.allowed) == 1
@@ -264,10 +224,6 @@ class GuidedChoiceForm(SubForm):
 
             self.tpm_choice = None
 
-    def _toggle_lvm(self, sender, val):
-        self.lvm_options.enabled = val
-        self.validated()
-
 
 class GuidedForm(Form):
     group = []
@@ -292,30 +248,20 @@ class GuidedForm(Form):
 HELP = _(
     """
 
-The "Use an entire disk" option installs Ubuntu onto the selected disk,
-replacing any partitions and data already there.
+The "Use an entire disk" option installs the Akash HomeNode OS onto the
+selected disk, replacing any partitions and data already there. The root
+volume is always LUKS-encrypted LVM; a passphrase is generated automatically
+and a recovery key is written to /var/log/installer/ on the installed
+system. The operator is not prompted for a passphrase.
 
-If the platform requires it, a bootloader partition is created on the disk.
+If the platform has a TPM, the drive will be bound to it on first boot so
+the system unlocks automatically. Without a TPM, a keyfile is embedded in
+the initramfs to unlock the drive at boot.
 
-If you choose to use LVM, two additional partitions are then created,
-one for /boot and one covering the rest of the disk. An LVM volume
-group is created containing the large partition. A logical volume is
-created for the root filesystem, sized using some simple heuristic. It
-can easily be enlarged with standard LVM command line tools (or on the
-next screen).
-
-You can also choose to encrypt LVM volume group. This will require
-setting a passphrase, that one will need to type on every boot before
-the system boots.
-
-If you do not choose to use LVM, a single partition is created covering the
-rest of the disk which is then formatted as ext4 and mounted at /.
-
-In either case, you will still have a chance to review and modify the results.
-
-If you choose to use a custom storage layout, no changes are made to the disks
-and you will have to, at a minimum, select a boot disk and mount a filesystem
-at /.
+If you choose "Custom storage layout", no changes are made to the disks
+and you will have to, at a minimum, select a boot disk and mount a
+filesystem at /. Custom layouts bypass automatic LUKS setup and are only
+supported for advanced operators.
 
 """
 )
@@ -525,41 +471,35 @@ class GuidedDiskSelectionView(BaseView):
             guided_choice = results["guided_choice"]
             target = guided_choice["disk"]
             tpm_choice = self.form.guided_choice.widget.form.tpm_choice
-            password = None
-            recovery_key: Optional[RecoveryKey] = None
             if tpm_choice is not None:
+                # Ubuntu Core path — TPM-backed full-disk encryption via
+                # snapd, not LUKS. Leave this flow intact.
                 if guided_choice.get("use_tpm", tpm_choice.default):
                     capability = GuidedCapability.CORE_BOOT_ENCRYPTED
                 else:
                     capability = GuidedCapability.CORE_BOOT_UNENCRYPTED
-            elif guided_choice.get("use_lvm", False):
-                opts = guided_choice.get("lvm_options", {})
-                if opts.get("encrypt", False):
-                    capability = GuidedCapability.LVM_LUKS
-                    password = opts["luks_options"]["passphrase"]
-                    if opts["luks_options"]["recovery_key"]:
-                        # There is only one encrypted LUKS (at max) in guided
-                        # so no need to prefix the locations with the name of
-                        # the VG.
-                        recovery_key = RecoveryKey(
-                            live_location=str(
-                                pathlib.Path("~/recovery-key.txt").expanduser()
-                            ),
-                            backup_location="var/log/installer/recovery-key.txt",
-                        )
-                else:
-                    capability = GuidedCapability.LVM
+                choice = GuidedChoiceV2(
+                    target=target,
+                    capability=capability,
+                )
             else:
-                if GuidedCapability.DD in target.allowed:
-                    capability = GuidedCapability.DD
-                else:
-                    capability = GuidedCapability.DIRECT
-            choice = GuidedChoiceV2(
-                target=target,
-                capability=capability,
-                password=password,
-                recovery_key=recovery_key,
-            )
+                # Akash HomeNode fork: classic installs are always LVM_LUKS
+                # with an auto-generated passphrase. The operator is never
+                # prompted; late-commands authenticate via the recovery key
+                # file Subiquity writes to /var/log/installer/.
+                password = secrets.token_urlsafe(32)
+                recovery_key = RecoveryKey(
+                    live_location=str(
+                        pathlib.Path("~/recovery-key.txt").expanduser()
+                    ),
+                    backup_location="var/log/installer/recovery-key.txt",
+                )
+                choice = GuidedChoiceV2(
+                    target=target,
+                    capability=GuidedCapability.LVM_LUKS,
+                    password=password,
+                    recovery_key=recovery_key,
+                )
         else:
             choice = GuidedChoiceV2(
                 target=GuidedStorageTargetManual(),

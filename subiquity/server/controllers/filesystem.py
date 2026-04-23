@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import pathlib
+import secrets
 import shutil
 import subprocess
 import time
@@ -274,16 +275,16 @@ class VariationInfo:
 
     @classmethod
     def classic(cls, name: str, min_size: int) -> Self:
+        # Akash HomeNode fork: only LUKS-encrypted layouts are permitted.
+        # Unencrypted DIRECT/LVM/ZFS are deliberately omitted so neither
+        # the guided TUI nor autoinstall can produce an unencrypted install.
         return cls(
             name=name,
             label=None,
             min_size=min_size,
             capability_info=CapabilityInfo(
                 allowed=[
-                    GuidedCapability.DIRECT,
-                    GuidedCapability.LVM,
                     GuidedCapability.LVM_LUKS,
-                    GuidedCapability.ZFS,
                     GuidedCapability.ZFS_LUKS_KEYSTORE,
                 ]
             ),
@@ -2189,30 +2190,34 @@ class FilesystemController(SubiquityController, FilesystemManipulator):
             self.validate_layout_mode(mode)
             password = layout.get("password", None)
             recovery_key = layout.get("recovery-key", False)
+            # Akash HomeNode fork: encryption is mandatory. Auto-generate a
+            # passphrase when one isn't supplied so the operator is never
+            # prompted, and force recovery-key on so late-commands have a
+            # stable way to authenticate to LUKS.
             if name == "lvm":
                 sizing_policy = SizingPolicy.from_string(
                     layout.get("sizing-policy", None)
                 )
-                if password is not None:
-                    capability = GuidedCapability.LVM_LUKS
-                else:
-                    capability = GuidedCapability.LVM
-                if recovery_key and password is None:
-                    raise Exception(
-                        "recovery_key can only be used if password is specified"
-                    )
+                if password is None:
+                    password = secrets.token_urlsafe(32)
+                capability = GuidedCapability.LVM_LUKS
+                recovery_key = True
                 guided_recovery_key = RecoveryKey.from_autoinstall(recovery_key)
 
             elif name == "dd":
                 capability = GuidedCapability.DD
                 assert mode == "reformat_disk"
             elif name == "zfs":
-                if password is not None:
-                    capability = GuidedCapability.ZFS_LUKS_KEYSTORE
-                else:
-                    capability = GuidedCapability.ZFS
+                if password is None:
+                    password = secrets.token_urlsafe(32)
+                capability = GuidedCapability.ZFS_LUKS_KEYSTORE
+                recovery_key = True
+                guided_recovery_key = RecoveryKey.from_autoinstall(recovery_key)
             else:
-                capability = GuidedCapability.DIRECT
+                raise Exception(
+                    "Akash HomeNode fork: only 'lvm' and 'zfs' layouts are "
+                    "supported (both always encrypted); got name={!r}".format(name)
+                )
 
         if mode == "reformat_disk":
             match = layout.get("match", {"size": "largest"})
