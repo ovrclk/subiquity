@@ -804,12 +804,25 @@ class HomenodeStorageView(BaseView):
     def done(self, sender):
         data = self.form.as_data()
 
+        # Akash HomeNode: all guided installs are LUKS-encrypted LVM with
+        # an auto-generated passphrase and a recovery key. Late-commands
+        # read the recovery-key file to add the initramfs keyfile slot.
+        luks_password = secrets.token_urlsafe(32)
+        luks_recovery_key = RecoveryKey(
+            live_location=str(
+                pathlib.Path("~/recovery-key.txt").expanduser()
+            ),
+            backup_location="var/log/installer/recovery-key.txt",
+        )
+
         if data.get("use_entire_disk"):
             if self.reformat_target is None:
                 return
             choice = GuidedChoiceV2(
                 target=self.reformat_target,
-                capability=GuidedCapability.LVM,
+                capability=GuidedCapability.LVM_LUKS,
+                password=luks_password,
+                recovery_key=luks_recovery_key,
                 sizing_policy=SizingPolicy.ALL,
             )
 
@@ -835,12 +848,15 @@ class HomenodeStorageView(BaseView):
             self.resize_target.new_size = new_size
             choice = GuidedChoiceV2(
                 target=self.resize_target,
-                capability=GuidedCapability.LVM,
+                capability=GuidedCapability.LVM_LUKS,
+                password=luks_password,
+                recovery_key=luks_recovery_key,
                 sizing_policy=SizingPolicy.ALL,
             )
 
         else:
-            # Custom storage layout
+            # Custom storage layout — encryption is the operator's
+            # responsibility in manual mode.
             choice = GuidedChoiceV2(
                 target=GuidedStorageTargetManual(),
                 capability=GuidedCapability.MANUAL,
