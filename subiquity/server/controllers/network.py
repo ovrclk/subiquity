@@ -236,6 +236,7 @@ class NetworkController(BaseNetworkController, SubiquityController):
             "type": "wifi" | "ethernet",
             "ssid": "...",          # for wifi
             "password": "...",      # for wifi
+            "hidden": true,         # for wifi, optional — non-broadcast SSID
             "ip_config": "dhcp" | "static",
             "static_ip": "...",     # for static
             "subnet": "...",
@@ -253,8 +254,12 @@ class NetworkController(BaseNetworkController, SubiquityController):
                 if not ssid:
                     return None
 
+                ap_config = {"password": password}
+                if net_config.get("hidden"):
+                    ap_config["hidden"] = True
+
                 wifi_config = {
-                    "access-points": {ssid: {"password": password}},
+                    "access-points": {ssid: ap_config},
                 }
 
                 if ip_config == "dhcp":
@@ -342,8 +347,12 @@ class NetworkController(BaseNetworkController, SubiquityController):
             if not ssid:
                 return None
 
+            ap_config = {"password": password}
+            if net_config.get("hidden"):
+                ap_config["hidden"] = True
+
             wifi_config = {
-                "access-points": {ssid: {"password": password}},
+                "access-points": {ssid: ap_config},
             }
 
             ip_config = net_config.get("ip_config", "dhcp")
