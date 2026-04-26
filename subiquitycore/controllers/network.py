@@ -522,7 +522,7 @@ class BaseNetworkController(BaseController):
             # SSID for the first time...
             device.config["dhcp4"] = True
             device.config["dhcp6"] = True
-        device.set_ssid_psk(wlan.ssid, wlan.psk)
+        device.set_ssid_psk(wlan.ssid, wlan.psk, wlan.hidden)
         self.update_link(device)
         self.apply_config()
 

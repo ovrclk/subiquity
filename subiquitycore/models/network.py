@@ -90,6 +90,7 @@ class VLANConfig:
 class WLANConfig:
     ssid: Optional[str]
     psk: Optional[str]
+    hidden: bool = False
 
 
 @attr.s(auto_attribs=True)
@@ -250,7 +251,9 @@ class NetworkDev:
                 scan_state = self.info.wlan["scan_state"]
                 visible_ssids = self.info.wlan["visible_ssids"]
             wlan = WLANStatus(
-                config=WLANConfig(ssid=ssid, psk=psk),
+                config=WLANConfig(
+                    ssid=ssid, psk=psk, hidden=self.configured_hidden
+                ),
                 scan_state=scan_state,
                 visible_ssids=visible_ssids,
             )
@@ -368,13 +371,21 @@ class NetworkDev:
             return ssid, psk
         return None, None
 
-    def set_ssid_psk(self, ssid, psk):
+    @property
+    def configured_hidden(self) -> bool:
+        for settings in self.config.get("access-points", {}).values():
+            return bool(settings.get("hidden", False))
+        return False
+
+    def set_ssid_psk(self, ssid, psk, hidden: bool = False):
         aps = self.config.setdefault("access-points", {})
         aps.clear()
         if ssid is not None:
             aps[ssid] = {}
             if psk is not None:
                 aps[ssid]["password"] = psk
+            if hidden:
+                aps[ssid]["hidden"] = True
 
     @property
     def ifindex(self):

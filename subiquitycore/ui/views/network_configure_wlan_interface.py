@@ -5,7 +5,7 @@ from urwid import BoxAdapter, LineBox, Text, connect_signal
 from subiquitycore.models.network import WLANConfig
 from subiquitycore.ui.buttons import cancel_btn, menu_btn
 from subiquitycore.ui.container import ListBox, Pile, WidgetWrap
-from subiquitycore.ui.form import Form, PasswordField, StringField
+from subiquitycore.ui.form import BooleanField, Form, PasswordField, StringField
 from subiquitycore.ui.stretchy import Stretchy
 from subiquitycore.ui.utils import Color, Padding, disabled
 
@@ -36,6 +36,7 @@ class WLANForm(Form):
 
     ssid = StringField(caption="Network Name:")
     psk = PasswordField(caption="Password:")
+    hidden = BooleanField(caption="Hidden network (SSID not broadcast):")
 
     def validate_psk(self):
         psk = self.psk.value
@@ -64,10 +65,13 @@ class NetworkConfigureWLANStretchy(Stretchy):
             self.form.ssid.value = self.dev_info.wlan.config.ssid
         if self.dev_info.wlan.config.psk:
             self.form.psk.value = self.dev_info.wlan.config.psk
+        self.form.hidden.value = self.dev_info.wlan.config.hidden
 
         self.ssid_row = self.form.ssid._table
         self.psk_row = self.form.psk._table
+        self.hidden_row = self.form.hidden._table
         self.ssid_row.bind(self.psk_row)
+        self.psk_row.bind(self.hidden_row)
 
         self.error = Text("")
 
@@ -120,6 +124,7 @@ class NetworkConfigureWLANStretchy(Stretchy):
             Padding.fixed_32(scan_btn),
             Text(""),
             self.psk_row,
+            self.hidden_row,
         ]
         return col
 
@@ -141,7 +146,8 @@ class NetworkConfigureWLANStretchy(Stretchy):
         else:
             psk = None
         self.parent.controller.set_wlan(
-            self.dev_info.name, WLANConfig(ssid=ssid, psk=psk)
+            self.dev_info.name,
+            WLANConfig(ssid=ssid, psk=psk, hidden=self.form.hidden.value),
         )
         self.parent.update_link(self.dev_info)
         self.parent.remove_overlay()
