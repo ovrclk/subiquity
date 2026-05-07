@@ -1607,6 +1607,23 @@ class FilesystemController(SubiquityController, FilesystemManipulator):
     async def v2_guided_POST(self, data: GuidedChoiceV2) -> GuidedStorageResponseV2:
         log.debug(data)
         self.locked_probe_data = True
+
+        # Akash HomeNode fork: encryption is mandatory and operator-less. The
+        # kiosk submits LVM_LUKS / ZFS_LUKS_KEYSTORE with password=null and
+        # recovery_key=null, which upstream subiquity would either reject or
+        # silently downgrade. Match the autoinstall guided path's defaulting
+        # (run_autoinstall_guided): generate a random passphrase and force a
+        # recovery-key file so the install always produces a real LUKS volume
+        # and late-commands have a stable handle for adding the keyfile slot.
+        if data.capability in (
+            GuidedCapability.LVM_LUKS,
+            GuidedCapability.ZFS_LUKS_KEYSTORE,
+        ):
+            if data.password is None:
+                data.password = secrets.token_urlsafe(32)
+            if data.recovery_key is None:
+                data.recovery_key = RecoveryKey()
+
         await self.guided(data)
         if not data.capability.supports_manual_customization():
             # Going forward, we probably want the client to call POST
