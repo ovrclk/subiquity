@@ -56,8 +56,15 @@ apps:
       APPORT_DATA_DIR: $SNAP/share/apport
   subiquity-service:
     command: usr/bin/subiquity-service
-    daemon: simple
-    restart-condition: always
+    # AKHN-127: no `daemon:` here — the akash-homenode kiosk drives
+    # subiquity entirely through the subiquity-server HTTP API and
+    # never wants the urwid TUI on tty1. With daemon: simple (the
+    # upstream value), snapd seeds both -server and -service in one
+    # atomic systemctl enable call; if the kiosk's cage takes tty1
+    # while -service is still trying to grab it, the conflict shows
+    # up as a TUI flash before the kiosk renders. Marking this as
+    # a plain app (not a daemon) tells snapd it's just a binary, so
+    # only -server is enabled at seed time.
     environment:
       # Save original values of environment variables, we want to restore them
       # for the debug shell (LP: #1975629).
