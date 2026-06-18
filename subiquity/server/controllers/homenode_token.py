@@ -85,20 +85,30 @@ class HomenodeTokenController(SubiquityController):
     def deserialize(self, data):
         self.token = data
 
-    def _save_token(self, token):
-        """Save the installation key to /tmp/token."""
+    @staticmethod
+    def _write_private(path, content):
+        # 0600 from creation; chmod covers a pre-existing file O_CREAT won't
+        # tighten. The installation key / install_id must not be world-readable
+        # to other processes in the live installer environment.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            with open(TOKEN_FILE, "w") as f:
-                f.write(token)
+            with os.fdopen(fd, "w") as f:
+                f.write(content)
+        finally:
+            os.chmod(path, 0o600)
+
+    def _save_token(self, token):
+        """Save the installation key to /tmp/token (0600)."""
+        try:
+            self._write_private(TOKEN_FILE, token)
             log.info("Saved homenode installation key to %s", TOKEN_FILE)
         except Exception as e:
             log.error("Failed to save installation key to %s: %s", TOKEN_FILE, e)
 
     def _save_install_id(self, install_id):
-        """Save the install_id to /tmp/install_id."""
+        """Save the install_id to /tmp/install_id (0600)."""
         try:
-            with open(INSTALL_ID_FILE, "w") as f:
-                f.write(install_id)
+            self._write_private(INSTALL_ID_FILE, install_id)
             log.info("Saved install_id to %s", INSTALL_ID_FILE)
         except Exception as e:
             log.error("Failed to save install_id to %s: %s", INSTALL_ID_FILE, e)
