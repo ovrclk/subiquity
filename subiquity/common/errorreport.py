@@ -38,6 +38,41 @@ from subiquitycore.file_util import write_file
 
 log = logging.getLogger("subiquity.common.errorreport")
 
+# AKHN-243: the installer journal is captured verbatim into crash reports
+# (recent_syslog(re.compile("."))). Strip Akash secrets before attaching.
+# Files holding the live installation key / install_id (written by the
+# homenode-token controller); their exact contents are redacted wherever they
+# appear, which is precise and avoids false positives.
+_SECRET_FILES = ("/tmp/token", "/tmp/install_id")
+
+# Targeted patterns for secrets that may not be on disk (auth headers, JWTs).
+# Deliberately NOT a generic long-base64 rule — that over-redacts legitimate
+# log content (hashes, UUIDs, device IDs).
+_SECRET_SUBS = [
+    (re.compile(r"(?i)(authorization:\s*bearer\s+)\S+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)(dpop:\s*)[A-Za-z0-9._~+/=-]+"), r"\1[REDACTED]"),
+    (re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"), "[REDACTED]"),
+]
+
+
+def redact_secrets(text):
+    """Redact the installation key, install_id, and auth tokens from text."""
+    if not text:
+        return text
+    for path in _SECRET_FILES:
+        try:
+            # errors="replace" so a non-UTF-8 file can't raise mid-redaction
+            # and leave the rest of the journal unredacted.
+            with open(path, encoding="utf-8", errors="replace") as f:
+                value = f.read().strip()
+        except OSError:
+            continue
+        if len(value) >= 8:
+            text = text.replace(value, "[REDACTED]")
+    for pattern, repl in _SECRET_SUBS:
+        text = pattern.sub(repl, text)
+    return text
+
 
 @attr.s(eq=False)
 class Upload(metaclass=urwid.MetaSignals):
@@ -133,8 +168,8 @@ class ErrorReport(metaclass=urwid.MetaSignals):
             if not self.reporter.dry_run:
                 self.pr.add_hooks_info(None)
                 apport.hookutils.attach_hardware(self.pr)
-            self.pr["InstallerJournal"] = apport.hookutils.recent_syslog(
-                re.compile(".")
+            self.pr["InstallerJournal"] = redact_secrets(
+                apport.hookutils.recent_syslog(re.compile("."))
             )
             snap_name = os.environ.get("SNAP_NAME", "")
             if snap_name != "":
