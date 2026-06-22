@@ -119,7 +119,11 @@ class HomenodeTokenController(SubiquityController):
         Returns:
             HomenodeTokenCheckAnswer with validation status
         """
-        log.info("check_token_GET called with token: %s", token[:10] + "..." if len(token) > 10 else token)
+        # Never log the key or a prefix of it: the server debug/info logs are
+        # attached verbatim to crash reports (InstallerServerLog*), and
+        # redact_secrets only scrubs the full on-disk value, not a prefix.
+        # AKHN-243.
+        log.info("check_token_GET called (token length=%d)", len(token))
         log.info("Network status: has_network=%s", self.app.base_model.network.has_network)
         
         # Check if network is available
@@ -134,14 +138,14 @@ class HomenodeTokenController(SubiquityController):
             # Verify installation key with Akash API
             log.info("Calling akash_api.verify_installation_key")
             result = await self.akash_api.verify_installation_key(token)
-            log.info("Installation key validation successful: %s", token[:10] + "...")
+            log.info("Installation key validation successful")
             
             # Extract and save install_id if present
             install_id = result.get("data", {}).get("install_id")
             if install_id:
                 self.install_id = install_id
                 self._save_install_id(install_id)
-                log.info("Extracted and saved install_id: %s", install_id[:10] + "..." if len(install_id) > 10 else install_id)
+                log.info("Extracted and saved install_id (length=%d)", len(install_id))
             else:
                 log.warning("install_id not found in API response")
             
